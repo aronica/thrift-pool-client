@@ -3,24 +3,23 @@
  */
 package com.github.phantomthief.thrift.client.impl;
 
-import static java.util.stream.Collectors.toList;
-
-import java.util.List;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.function.Supplier;
-
-import org.apache.thrift.TServiceClient;
-import org.apache.thrift.protocol.TBinaryProtocol;
-import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.transport.TTransport;
-
 import com.github.phantomthief.thrift.client.ThriftClient;
 import com.github.phantomthief.thrift.client.pool.ThriftConnectionPoolProvider;
 import com.github.phantomthief.thrift.client.pool.ThriftServerInfo;
 import com.github.phantomthief.thrift.client.pool.impl.DefaultThriftConnectionPoolImpl;
 import com.github.phantomthief.thrift.client.utils.FailoverCheckingStrategy;
 import com.github.phantomthief.thrift.client.utils.ThriftClientUtils;
+import org.apache.thrift.TServiceClient;
+import org.apache.thrift.protocol.TBinaryProtocol;
+import org.apache.thrift.protocol.TProtocol;
+import org.apache.thrift.transport.TTransport;
+
+import java.util.List;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
+import static java.util.stream.Collectors.toList;
 
 /**
  * <p>
@@ -39,11 +38,11 @@ public class FailoverThriftClientImpl implements ThriftClient {
      * Constructor for FailoverThriftClientImpl.
      * </p>
      *
-     * @param serverInfoProvider a {@link java.util.function.Supplier}
+     * @param manager a {@link ThriftServerInfoManager}
      *        object.
      */
-    public FailoverThriftClientImpl(Supplier<List<ThriftServerInfo>> serverInfoProvider) {
-        this(new FailoverCheckingStrategy<>(), serverInfoProvider, DefaultThriftConnectionPoolImpl
+    public FailoverThriftClientImpl(ThriftServerInfoManager manager) {
+        this(new FailoverCheckingStrategy<>(), manager, DefaultThriftConnectionPoolImpl
                 .getInstance());
     }
 
@@ -55,7 +54,7 @@ public class FailoverThriftClientImpl implements ThriftClient {
      * @param failoverCheckingStrategy a
      *        {@link com.github.phantomthief.thrift.client.utils.FailoverCheckingStrategy}
      *        object.
-     * @param serverInfoProvider a {@link java.util.function.Supplier}
+     * @param manager a
      *        object.
      * @param poolProvider a
      *        {@link com.github.phantomthief.thrift.client.pool.ThriftConnectionPoolProvider}
@@ -63,11 +62,11 @@ public class FailoverThriftClientImpl implements ThriftClient {
      */
     public FailoverThriftClientImpl(
             FailoverCheckingStrategy<ThriftServerInfo> failoverCheckingStrategy,
-            Supplier<List<ThriftServerInfo>> serverInfoProvider,
+            ThriftServerInfoManager manager,
             ThriftConnectionPoolProvider poolProvider) {
-        FailoverStategy failoverStategy = new FailoverStategy(serverInfoProvider, poolProvider,
+        FailoverStategy failoverStategy = new FailoverStategy( manager, poolProvider,
                 failoverCheckingStrategy);
-        this.thriftClient = new ThriftClientImpl(failoverStategy, failoverStategy);
+        this.thriftClient = new ThriftClientImpl(manager, failoverStategy);
     }
 
     /** {@inheritDoc} */
@@ -124,16 +123,16 @@ public class FailoverThriftClientImpl implements ThriftClient {
                                  Supplier<List<ThriftServerInfo>>,
                                  ThriftConnectionPoolProvider {
 
-        private final Supplier<List<ThriftServerInfo>> originalServerInfoProvider;
+        private final ThriftServerInfoManager manager;
 
         private final ThriftConnectionPoolProvider connectionPoolProvider;
 
         private final FailoverCheckingStrategy<ThriftServerInfo> failoverCheckingStrategy;
 
-        private FailoverStategy(Supplier<List<ThriftServerInfo>> originalServerInfoProvider,
+        private FailoverStategy(ThriftServerInfoManager manager,
                 ThriftConnectionPoolProvider connectionPoolProvider,
                 FailoverCheckingStrategy<ThriftServerInfo> failoverCheckingStrategy) {
-            this.originalServerInfoProvider = originalServerInfoProvider;
+            this.manager = manager;
             this.connectionPoolProvider = connectionPoolProvider;
             this.failoverCheckingStrategy = failoverCheckingStrategy;
         }
@@ -144,7 +143,7 @@ public class FailoverThriftClientImpl implements ThriftClient {
         @Override
         public List<ThriftServerInfo> get() {
             Set<ThriftServerInfo> failedServers = failoverCheckingStrategy.getFailed();
-            return originalServerInfoProvider.get().stream()
+            return manager.getAll().stream()
                     .filter(i -> !failedServers.contains(i)).collect(toList());
         }
 
@@ -152,7 +151,7 @@ public class FailoverThriftClientImpl implements ThriftClient {
          * @see com.github.phantomthief.thrift.client.pool.ThriftConnectionPoolProvider#getConnection(com.github.phantomthief.thrift.client.pool.ThriftServerInfo)
          */
         @Override
-        public TTransport getConnection(ThriftServerInfo thriftServerInfo) {
+        public TTransport getConnection(ThriftServerInfo thriftServerInfo)throws Exception {
             return connectionPoolProvider.getConnection(thriftServerInfo);
         }
 

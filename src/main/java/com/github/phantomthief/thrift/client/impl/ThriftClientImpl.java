@@ -3,66 +3,48 @@
  */
 package com.github.phantomthief.thrift.client.impl;
 
-import java.lang.reflect.InvocationTargetException;
-import java.util.List;
-import java.util.function.Function;
-import java.util.function.Supplier;
-
-import org.apache.thrift.TServiceClient;
-import org.apache.thrift.protocol.TCompactProtocol;
-import org.apache.thrift.protocol.TMultiplexedProtocol;
-import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.transport.TTransport;
-
 import com.github.phantomthief.thrift.client.ThriftClient;
 import com.github.phantomthief.thrift.client.exception.NoBackendException;
 import com.github.phantomthief.thrift.client.pool.ThriftConnectionPoolProvider;
 import com.github.phantomthief.thrift.client.pool.ThriftServerInfo;
 import com.github.phantomthief.thrift.client.pool.impl.DefaultThriftConnectionPoolImpl;
 import com.github.phantomthief.thrift.client.utils.ThriftClientUtils;
-
 import javassist.util.proxy.Proxy;
 import javassist.util.proxy.ProxyFactory;
+import org.apache.thrift.TServiceClient;
+import org.apache.thrift.protocol.TCompactProtocol;
+import org.apache.thrift.protocol.TMultiplexedProtocol;
+import org.apache.thrift.protocol.TProtocol;
+import org.apache.thrift.transport.TTransport;
 
-/**
- * <p>
- * ThriftClientImpl class.
- * </p>
- *
- * @author w.vela
- * @version $Id: $Id
- */
+import java.lang.reflect.InvocationTargetException;
+import java.util.function.Function;
+
 public class ThriftClientImpl implements ThriftClient {
 
     private final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(getClass());
 
-    private final ThriftConnectionPoolProvider poolProvider;
+    private ThriftConnectionPoolProvider poolProvider;
 
-    private final Supplier<List<ThriftServerInfo>> serverInfoProvider;
+    private ThriftServerInfoManager serverInfoManager ;
 
     /**
      * <p>
      * Constructor for ThriftClientImpl.
      * </p>
      *
-     * @param serverInfoProvider provide service list
      */
-    public ThriftClientImpl(Supplier<List<ThriftServerInfo>> serverInfoProvider) {
-        this(serverInfoProvider, DefaultThriftConnectionPoolImpl.getInstance());
+    public ThriftClientImpl(ThriftServerInfoManager manager) {
+        poolProvider = DefaultThriftConnectionPoolImpl.getInstance();
+        this.serverInfoManager = manager;
+        this.serverInfoManager.start();
     }
 
-    /**
-     * <p>
-     * Constructor for ThriftClientImpl.
-     * </p>
-     *
-     * @param serverInfoProvider provide service list
-     * @param poolProvider provide a pool
-     */
-    public ThriftClientImpl(Supplier<List<ThriftServerInfo>> serverInfoProvider,
-            ThriftConnectionPoolProvider poolProvider) {
+    public ThriftClientImpl(ThriftServerInfoManager manager,
+                            ThriftConnectionPoolProvider poolProvider) {
         this.poolProvider = poolProvider;
-        this.serverInfoProvider = serverInfoProvider;
+        this.serverInfoManager = manager;
+        serverInfoManager.start();
     }
 
     /**
@@ -100,25 +82,30 @@ public class ThriftClientImpl implements ThriftClient {
     @Override
     public <X extends TServiceClient> X iface(Class<X> ifaceClass,
             Function<TTransport, TProtocol> protocolProvider, int hash) {
-        List<ThriftServerInfo> servers = serverInfoProvider.get();
-        if (servers == null || servers.isEmpty()) {
-            throw new NoBackendException();
+        ThriftServerInfo server = null;
+        TTransport transport = null;
+        TProtocol protocol = null;
+        while(transport == null){
+            server = serverInfoManager.get();
+            if(server == null)throw new NoBackendException();
+            try {
+                transport = poolProvider.getConnection(server);
+                break;
+            } catch (Exception e) {
+                logger.error("Create TTransport connecting to {} throws exception, invalid it.",server,e);
+                serverInfoManager.invalid(server);
+            }
         }
-        hash = Math.abs(hash);
-        hash = hash < 0 ? 0 : hash;
-        ThriftServerInfo selected = servers.get(hash % servers.size());
-        logger.trace("get connection for [{}]->{} with hash:{}", ifaceClass, selected, hash);
-
-        TTransport transport = poolProvider.getConnection(selected);
-        TProtocol protocol = protocolProvider.apply(transport);
-
+        protocol = protocolProvider.apply(transport);
         ProxyFactory factory = new ProxyFactory();
         factory.setSuperclass(ifaceClass);
         factory.setFilter(m -> ThriftClientUtils.getInterfaceMethodNames(ifaceClass).contains(
                 m.getName()));
         try {
-            X x = (X) factory.create(new Class[] { org.apache.thrift.protocol.TProtocol.class },
+            X x = (X) factory.create(new Class[] { TProtocol.class },
                     new Object[] { protocol });
+            ThriftServerInfo finalServer = server;
+            TTransport finalTransport = transport;
             ((Proxy) x).setHandler((self, thisMethod, proceed, args) -> {
                 boolean success = false;
                 try {
@@ -127,9 +114,9 @@ public class ThriftClientImpl implements ThriftClient {
                     return result;
                 } finally {
                     if (success) {
-                        poolProvider.returnConnection(selected, transport);
+                        poolProvider.returnConnection(finalServer, finalTransport);
                     } else {
-                        poolProvider.returnBrokenConnection(selected, transport);
+                        poolProvider.returnBrokenConnection(finalServer, finalTransport);
                     }
                 }
             });

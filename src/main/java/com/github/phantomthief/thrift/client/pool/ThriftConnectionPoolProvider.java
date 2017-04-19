@@ -24,7 +24,7 @@ public interface ThriftConnectionPoolProvider {
      *        {@link com.github.phantomthief.thrift.client.pool.ThriftServerInfo} object.
      * @return a {@link org.apache.thrift.transport.TTransport} object.
      */
-    TTransport getConnection(ThriftServerInfo thriftServerInfo);
+    TTransport getConnection(ThriftServerInfo thriftServerInfo)throws Exception;
 
     /**
      * <p>

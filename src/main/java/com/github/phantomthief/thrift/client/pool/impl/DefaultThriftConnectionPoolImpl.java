@@ -3,11 +3,8 @@
  */
 package com.github.phantomthief.thrift.client.pool.impl;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
-import static org.slf4j.LoggerFactory.getLogger;
-
-import java.util.function.Function;
-
+import com.github.phantomthief.thrift.client.pool.ThriftConnectionPoolProvider;
+import com.github.phantomthief.thrift.client.pool.ThriftServerInfo;
 import org.apache.commons.pool2.KeyedPooledObjectFactory;
 import org.apache.commons.pool2.PooledObject;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
@@ -18,8 +15,10 @@ import org.apache.thrift.transport.TSocket;
 import org.apache.thrift.transport.TTransport;
 import org.slf4j.Logger;
 
-import com.github.phantomthief.thrift.client.pool.ThriftConnectionPoolProvider;
-import com.github.phantomthief.thrift.client.pool.ThriftServerInfo;
+import java.util.function.Function;
+
+import static java.util.concurrent.TimeUnit.MINUTES;
+import static org.slf4j.LoggerFactory.getLogger;
 
 /**
  * <p>
@@ -87,7 +86,7 @@ public final class DefaultThriftConnectionPoolImpl implements ThriftConnectionPo
 
     /** {@inheritDoc} */
     @Override
-    public TTransport getConnection(ThriftServerInfo thriftServerInfo) {
+    public TTransport getConnection(ThriftServerInfo thriftServerInfo){
         try {
             return connections.borrowObject(thriftServerInfo);
         } catch (Exception e) {
